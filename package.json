@@ -1,0 +1,22 @@
+{
+  "name": "scraper-alquilavende",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Scraper configurable de avisos de inmuebles hacia MongoDB Atlas (compraensanjuan.com y extensible a otros sitios)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "scrape": "node src/index.js --once"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "mongodb": "^6.10.0",
+    "node-cron": "^3.0.3",
+    "p-limit": "^6.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
