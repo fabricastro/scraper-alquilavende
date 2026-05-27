@@ -1,5 +1,6 @@
 import { CATEGORIAS } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { notifyNuevos } from '../notifications/telegram.js';
 import { scrapeCategoria } from './scrape-categoria.js';
 
 function emptyTotals() {
@@ -19,17 +20,21 @@ export async function scrapeAll(repo) {
   logger.info('=== Scraper iniciado ===');
 
   const totals = emptyTotals();
+  const nuevosListings = [];
 
   for (const categoria of CATEGORIAS) {
     logger.info(`--- Categoría: ${categoria.nombre} (cat=${categoria.cat}) ---`);
     const stats = await scrapeCategoria(categoria, repo, logger);
     logger.info(summarizeCategoria(categoria.nombre, stats));
     for (const k of Object.keys(totals)) totals[k] += stats[k];
+    nuevosListings.push(...stats.nuevosListings);
   }
 
   logger.info('--- Marcando avisos zombies (no vistos > 7 días) ---');
   const inactivados = await repo.markInactiveStale();
   logger.info(`Marcados como inactivos: ${inactivados}`);
+
+  await notifyNuevos(nuevosListings, logger);
 
   const durationMin = ((Date.now() - startedAt) / 60_000).toFixed(1);
   logger.info(`=== Scraper terminado en ${durationMin} min ===`);

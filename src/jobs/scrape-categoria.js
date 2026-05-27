@@ -40,7 +40,14 @@ async function processAviso(listing, repo, logger) {
 }
 
 function emptyStats() {
-  return { nuevos: 0, actualizados: 0, skipped: 0, errores: 0, total: 0 };
+  return {
+    nuevos: 0,
+    actualizados: 0,
+    skipped: 0,
+    errores: 0,
+    total: 0,
+    nuevosListings: [],
+  };
 }
 
 function tallyStatus(stats, status) {
@@ -78,7 +85,10 @@ export async function scrapeCategoria(categoria, repo, parentLogger) {
     for (const listing of listings) {
       const status = await processAviso(listing, repo, log);
       tallyStatus(stats, status);
-      if (status === AVISO_STATUS.NUEVO) nuevosEnPagina++;
+      if (status === AVISO_STATUS.NUEVO) {
+        nuevosEnPagina++;
+        stats.nuevosListings.push(listing);
+      }
     }
 
     if (nuevosEnPagina === 0) {

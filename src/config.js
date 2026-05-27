@@ -42,3 +42,16 @@ export const MONGO = {
   dbName: process.env.DB_NAME || 'inmuebles_sj',
   collectionName: process.env.COLLECTION_NAME || 'avisos',
 };
+
+export const TELEGRAM = {
+  botToken: process.env.TELEGRAM_BOT_TOKEN || null,
+  chatId: process.env.TELEGRAM_CHAT_ID || null,
+  // Telegram limita cada mensaje a 4096 caracteres.
+  maxMessageLength: 4096,
+  // Cantidad máxima de avisos a listar en el resumen; el resto se cuenta aparte.
+  maxListedAvisos: 30,
+  timeoutMs: 15_000,
+  // Reintentos ante fallos de red o errores 5xx (timeouts intermitentes).
+  maxRetries: 3,
+  retryBackoffMs: 2_000,
+};
