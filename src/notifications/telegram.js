@@ -9,11 +9,25 @@ export function isConfigured() {
 
 // Telegram parse_mode=HTML solo interpreta un set acotado de tags.
 // Escapamos los caracteres reservados en el texto que viene del sitio.
+// También escapamos `"` para que las URLs raras no rompan el atributo href.
 function escapeHtml(text) {
   return String(text ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Quita los tags HTML que usamos en el resumen y devuelve las entities a su
+// forma original. Se usa como fallback si Telegram rechaza el parse HTML.
+function stripHtml(text) {
+  return String(text ?? '')
+    .replace(/<a\s+[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '$2 ($1)')
+    .replace(/<\/?[a-z][^>]*>/gi, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
 }
 
 function formatAviso(aviso) {
@@ -46,23 +60,36 @@ export function formatResumen(nuevos, now = new Date()) {
   const listed = nuevos.slice(0, TELEGRAM.maxListedAvisos);
   const lines = listed.map(formatAviso);
 
-  const restantes = nuevos.length - listed.length;
-  if (restantes > 0) lines.push(`…y ${restantes} más`);
+  // Armamos el mensaje respetando el límite de Telegram (4096 chars).
+  // Si nos pasamos, vamos descartando avisos del final y actualizamos
+  // el footer "…y N más". Así nunca cortamos en medio de un tag HTML.
+  const buildText = (visibleLines) => {
+    const restantes = nuevos.length - visibleLines.length;
+    const footer = restantes > 0 ? [`…y ${restantes} más`] : [];
+    return [header, '', ...visibleLines, ...footer].join('\n');
+  };
 
-  return [header, '', ...lines].join('\n');
+  let text = buildText(lines);
+  while (text.length > TELEGRAM.maxMessageLength && lines.length > 0) {
+    lines.pop();
+    text = buildText(lines);
+  }
+  return text;
 }
 
-async function postMessage(text) {
+async function postMessage(text, { useHtml = true } = {}) {
   const url = `${API_BASE}/bot${TELEGRAM.botToken}/sendMessage`;
+  const payload = {
+    chat_id: TELEGRAM.chatId,
+    text,
+    disable_web_page_preview: true,
+  };
+  if (useHtml) payload.parse_mode = 'HTML';
+
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: TELEGRAM.chatId,
-      text: text.slice(0, TELEGRAM.maxMessageLength),
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(TELEGRAM.timeoutMs),
   });
 
@@ -70,20 +97,35 @@ async function postMessage(text) {
     const body = await res.text().catch(() => '');
     const err = new Error(`Telegram respondió ${res.status}: ${body}`);
     err.status = res.status;
+    err.body = body;
     throw err;
   }
 }
 
+// Detecta el error específico de parseo de HTML para fallback a texto plano.
+function isParseEntitiesError(err) {
+  return err?.status === 400 && /can't parse entities/i.test(err.body || '');
+}
+
 // Reintenta ante fallos de red o 5xx (timeouts intermitentes de la red/ISP).
 // Un 4xx (token o chat_id inválido) no se reintenta: no se arregla solo.
+// Excepción: si Telegram rechaza por HTML mal formado, reintentamos UNA vez
+// como texto plano para no perder la notificación.
 async function sendMessage(text, log) {
   let lastErr;
   for (let attempt = 1; attempt <= TELEGRAM.maxRetries; attempt++) {
     try {
-      await postMessage(text);
+      await postMessage(text, { useHtml: true });
       return;
     } catch (err) {
       lastErr = err;
+      if (isParseEntitiesError(err)) {
+        log.warn(
+          `Telegram no pudo parsear el HTML (${err.body?.slice(0, 200)}). Reintento como texto plano.`
+        );
+        await postMessage(stripHtml(text), { useHtml: false });
+        return;
+      }
       if (err.status >= 400 && err.status < 500) throw err;
       if (attempt < TELEGRAM.maxRetries) {
         const wait = TELEGRAM.retryBackoffMs * attempt;
