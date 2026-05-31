@@ -61,9 +61,12 @@ export async function scrapeCategoria(categoria, repo, parentLogger) {
   const log = parentLogger.child(categoria.nombre);
   const stats = emptyStats();
   let page = 1;
-  let consecutivePagesWithoutNewAvisos = 0;
 
-  while (true) {
+  // Paginamos SIEMPRE hasta la primera página vacía: recorrer cada listado es
+  // lo que refresca last_seen_at y mantiene vivo al aviso. Solo se hace el
+  // fetch caro del detalle para avisos NUEVOS (ver processAviso). El tope
+  // maxPagesPerCategoria es una salvaguarda contra loops, no un early-exit.
+  while (page <= SCRAPE.maxPagesPerCategoria) {
     let html;
     try {
       html = await fetchHtml(listingUrl(categoria.cat, page));
@@ -81,29 +84,22 @@ export async function scrapeCategoria(categoria, repo, parentLogger) {
     log.info(`Pagina ${page}: ${listings.length} avisos`);
     stats.total += listings.length;
 
-    let nuevosEnPagina = 0;
     for (const listing of listings) {
       const status = await processAviso(listing, repo, log);
       tallyStatus(stats, status);
       if (status === AVISO_STATUS.NUEVO) {
-        nuevosEnPagina++;
         stats.nuevosListings.push(listing);
       }
     }
 
-    if (nuevosEnPagina === 0) {
-      consecutivePagesWithoutNewAvisos++;
-      if (consecutivePagesWithoutNewAvisos >= SCRAPE.earlyExitEmptyPages) {
-        log.info(
-          `Early-exit: ${SCRAPE.earlyExitEmptyPages} páginas seguidas sin avisos nuevos`
-        );
-        break;
-      }
-    } else {
-      consecutivePagesWithoutNewAvisos = 0;
-    }
-
     page++;
+  }
+
+  if (page > SCRAPE.maxPagesPerCategoria) {
+    log.error(
+      `Tope de ${SCRAPE.maxPagesPerCategoria} páginas alcanzado en ${categoria.nombre} — ` +
+        'posible loop de paginación o catálogo más grande de lo esperado'
+    );
   }
 
   return stats;

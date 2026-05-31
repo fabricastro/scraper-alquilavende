@@ -15,10 +15,16 @@ export const HTTP = {
 export const SCRAPE = {
   freshnessThresholdMs: 23 * 60 * 60 * 1000,
   staleAfterDays: 7,
-  // Cuántas páginas consecutivas sin avisos NUEVOS toleramos antes de
-  // dar la categoría por terminada. Evita falsos positivos por destacados
-  // que empujan abajo los avisos nuevos genuinos.
-  earlyExitEmptyPages: 2,
+  // Tope de seguridad por categoría. La paginación corta de forma natural al
+  // llegar a una página vacía; este límite solo evita un loop infinito si el
+  // sitio dejara de devolver páginas vacías al final.
+  //
+  // IMPORTANTE: paginamos SIEMPRE hasta agotar resultados. Refrescar
+  // last_seen_at de cada aviso existente (recorriendo su listado) es lo que lo
+  // mantiene activo. El viejo early-exit "tras N páginas sin avisos nuevos"
+  // congelaba el last_seen_at de las páginas profundas, y markInactiveStale
+  // terminaba dándolas de baja: así se perdió ~80% del catálogo.
+  maxPagesPerCategoria: 300,
 };
 
 export const CATEGORIAS = [
