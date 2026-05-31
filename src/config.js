@@ -49,13 +49,18 @@ export const MONGO = {
   collectionName: process.env.COLLECTION_NAME || 'avisos',
 };
 
+// Frontend público. Los links "ver aviso" del resumen de Telegram apuntan acá
+// (no al sitio scrapeado): https://www.alquilavende.com.ar/aviso/<id>
+export const PUBLIC_SITE = {
+  baseUrl: 'https://www.alquilavende.com.ar',
+};
+
 export const TELEGRAM = {
   botToken: process.env.TELEGRAM_BOT_TOKEN || null,
   chatId: process.env.TELEGRAM_CHAT_ID || null,
-  // Telegram limita cada mensaje a 4096 caracteres.
+  // Telegram limita cada mensaje a 4096 caracteres. El resumen lista tantos
+  // avisos nuevos como entren hasta ese límite; el resto se cuenta en "…y N más".
   maxMessageLength: 4096,
-  // Cantidad máxima de avisos a listar en el resumen; el resto se cuenta aparte.
-  maxListedAvisos: 30,
   timeoutMs: 15_000,
   // Reintentos ante fallos de red o errores 5xx (timeouts intermitentes).
   maxRetries: 3,

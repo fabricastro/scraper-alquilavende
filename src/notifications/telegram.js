@@ -1,4 +1,4 @@
-import { TELEGRAM } from '../config.js';
+import { PUBLIC_SITE, TELEGRAM } from '../config.js';
 import { sleep } from '../utils/sleep.js';
 
 const API_BASE = 'https://api.telegram.org';
@@ -30,13 +30,18 @@ function stripHtml(text) {
     .replace(/&amp;/g, '&');
 }
 
+// Link al detalle en nuestro frontend público, no al sitio scrapeado.
+function avisoUrl(aviso) {
+  return `${PUBLIC_SITE.baseUrl}/aviso/${aviso._id}`;
+}
+
 function formatAviso(aviso) {
   const titulo = escapeHtml(aviso.titulo || 'Sin título');
   const contexto = [aviso.operacion, aviso.zona].filter(Boolean).join(', ');
   const contextoTag = contexto ? ` <i>(${escapeHtml(contexto)})</i>` : '';
   const precio = escapeHtml(aviso.precio_texto || 'Consultar');
-  const link = aviso.url_original
-    ? ` — <a href="${escapeHtml(aviso.url_original)}">ver aviso</a>`
+  const link = aviso._id
+    ? ` — <a href="${escapeHtml(avisoUrl(aviso))}">ver aviso</a>`
     : '';
   return `• <b>${titulo}</b>${contextoTag}\n  ${precio}${link}`;
 }
@@ -57,12 +62,11 @@ export function formatResumen(nuevos, now = new Date()) {
     nuevos.length === 1 ? '' : 's'
   } inmueble${nuevos.length === 1 ? '' : 's'}</b> — ${fecha}`;
 
-  const listed = nuevos.slice(0, TELEGRAM.maxListedAvisos);
-  const lines = listed.map(formatAviso);
+  const lines = nuevos.map(formatAviso);
 
-  // Armamos el mensaje respetando el límite de Telegram (4096 chars).
-  // Si nos pasamos, vamos descartando avisos del final y actualizamos
-  // el footer "…y N más". Así nunca cortamos en medio de un tag HTML.
+  // Un solo mensaje, hasta el límite de Telegram (4096 chars). Listamos tantos
+  // avisos como entren y, si sobran, los descartamos del final actualizando el
+  // footer "…y N más". Popear líneas enteras garantiza no cortar un tag HTML.
   const buildText = (visibleLines) => {
     const restantes = nuevos.length - visibleLines.length;
     const footer = restantes > 0 ? [`…y ${restantes} más`] : [];
