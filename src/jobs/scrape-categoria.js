@@ -1,6 +1,6 @@
-import { HTTP, SCRAPE } from '../config.js';
-import { fetchHtml } from '../scraping/http-client.js';
-import { parseListado } from '../scraping/listado-parser.js';
+import { SCRAPE } from '../config.js';
+import { fetchHtml, fetchListado } from '../scraping/http-client.js';
+import { mapListadoRows } from '../scraping/listado-parser.js';
 import { parseDetalle } from '../scraping/detalle-parser.js';
 
 export const AVISO_STATUS = Object.freeze({
@@ -9,10 +9,6 @@ export const AVISO_STATUS = Object.freeze({
   SKIPPED: 'skipped',
   ERROR: 'error',
 });
-
-function listingUrl(cat, page) {
-  return `${HTTP.baseUrl}/b.php?cat=${cat}&pagina=${page}&orden=0&estado=Todos`;
-}
 
 async function processAviso(listing, repo, logger) {
   const now = new Date();
@@ -61,21 +57,27 @@ export async function scrapeCategoria(categoria, repo, parentLogger) {
   const log = parentLogger.child(categoria.nombre);
   const stats = emptyStats();
   let page = 1;
+  // Distingue "categoría legítimamente sin más resultados" (rows.length === 0)
+  // de "no pudimos ni preguntar" (tkn vencido, sesión, sitio caído, forma de
+  // respuesta cambiada). Solo lo primero es un fin de categoría normal — lo
+  // segundo tiene que hacer ruido en scrapeAll, no camuflarse como total:0.
+  let fetchFailed = false;
 
   // Paginamos SIEMPRE hasta la primera página vacía: recorrer cada listado es
   // lo que refresca last_seen_at y mantiene vivo al aviso. Solo se hace el
   // fetch caro del detalle para avisos NUEVOS (ver processAviso). El tope
   // maxPagesPerCategoria es una salvaguarda contra loops, no un early-exit.
   while (page <= SCRAPE.maxPagesPerCategoria) {
-    let html;
+    let data;
     try {
-      html = await fetchHtml(listingUrl(categoria.cat, page));
+      data = await fetchListado({ cat: categoria.cat, pagina: page });
     } catch (err) {
       log.error(`Falló listado pagina=${page}: ${err.message}`);
+      fetchFailed = true;
       break;
     }
 
-    const listings = parseListado(html, categoria.nombre);
+    const listings = mapListadoRows(data.rows, categoria.nombre);
     if (listings.length === 0) {
       log.info(`Pagina ${page} vacía — fin de categoría`);
       break;
@@ -102,5 +104,5 @@ export async function scrapeCategoria(categoria, repo, parentLogger) {
     );
   }
 
-  return stats;
+  return { ...stats, fetchFailed };
 }

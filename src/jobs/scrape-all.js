@@ -21,6 +21,8 @@ export async function scrapeAll(repo) {
 
   const totals = emptyTotals();
   const nuevosListings = [];
+  let categoriasConResultados = 0;
+  let categoriasConFetchFailed = 0;
 
   for (const categoria of CATEGORIAS) {
     logger.info(`--- Categoría: ${categoria.nombre} (cat=${categoria.cat}) ---`);
@@ -28,6 +30,30 @@ export async function scrapeAll(repo) {
     logger.info(summarizeCategoria(categoria.nombre, stats));
     for (const k of Object.keys(totals)) totals[k] += stats[k];
     nuevosListings.push(...stats.nuevosListings);
+    if (stats.total > 0) categoriasConResultados++;
+    if (stats.fetchFailed) categoriasConFetchFailed++;
+  }
+
+  // Página 1 vacía en UNA categoría puede ser legítimo (categoría chica sin
+  // stock). Pero TODAS las categorías en 0 el mismo día es la firma de una
+  // falla sistémica (ej. el sitio cambió el parsing/endpoint del listado y
+  // dejamos de extraer avisos silenciosamente — ya pasó una vez, ver
+  // markInactiveStale). Un fetch fallido (tkn/sesión/forma de respuesta) en
+  // CUALQUIER categoría es la misma señal, aunque el resto de categorías haya
+  // andado bien ese día — no hay que esperar a que fallen todas para avisar.
+  // Esto tiene que ser imposible de pasar por alto en los logs de GH Actions,
+  // así que además de loguear, se marca el proceso como fallido.
+  const fallaSistemica = categoriasConResultados === 0 || categoriasConFetchFailed > 0;
+  if (fallaSistemica) {
+    logger.error(
+      `¡ALERTA! categoriasConResultados=${categoriasConResultados} ` +
+        `categoriasConFetchFailed=${categoriasConFetchFailed} de ${CATEGORIAS.length}. ` +
+        'Esto es anómalo: probablemente el sitio cambió el parsing/endpoint ' +
+        'del listado y el scraper está extrayendo listados vacíos (o fallando) ' +
+        'en silencio. Revisar antes de que markInactiveStale empiece a dar de ' +
+        'baja el catálogo.'
+    );
+    process.exitCode = 1;
   }
 
   logger.info('--- Marcando avisos zombies (no vistos > 7 días) ---');
